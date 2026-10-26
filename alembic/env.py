@@ -13,7 +13,9 @@ from models.base import Base
 import models.user  # noqa: F401 — autogenerate 테이블 탐지용
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Alembic은 동기 드라이버 사용 (asyncpg → psycopg2로 치환)
+sync_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

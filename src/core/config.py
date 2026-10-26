@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
 
-    database_url: str = "postgresql+psycopg2://soma@localhost/fastapi"
+    database_url: str = "postgresql+asyncpg://soma@localhost/fastapi"
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
