@@ -7,7 +7,9 @@ authors = [
     { name = "somacci", email = "ldhbom@gmail.com" }
 ]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "fastapi[standard,standart]>=0.128.8",
+]
 
 [project.scripts]
 upsong = "upsong:main"
