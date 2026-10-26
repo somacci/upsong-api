@@ -1,0 +1,23 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from core.database import get_db
+from core.dependencies import get_current_user_id
+from schemas.user import UserRead, UserUpdate
+from services.user_service import UserService
+
+router = APIRouter()
+
+
+@router.get("/me", response_model=UserRead)
+def get_me(user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
+    return UserService(db).get_by_id(user_id)
+
+
+@router.patch("/me", response_model=UserRead)
+def update_me(
+    body: UserUpdate,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    return UserService(db).update(user_id, body)
