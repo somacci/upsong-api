@@ -18,10 +18,18 @@ class BaseRepository(Generic[ModelT]):
         result = await self.db.execute(select(self.model).offset(skip).limit(limit))
         return list(result.scalars().all())
 
+    async def _commit(self) -> None:
+        # 커밋 실패(제약 위반 등) 시 세션을 롤백해 재사용 가능한 상태로 되돌린 뒤 예외 전달
+        try:
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
     async def create(self, **kwargs) -> ModelT:
         obj = self.model(**kwargs)
         self.db.add(obj)
-        await self.db.commit()
+        await self._commit()
         await self.db.refresh(obj)
         return obj
 
@@ -30,7 +38,7 @@ class BaseRepository(Generic[ModelT]):
         if obj:
             for k, v in data.items():
                 setattr(obj, k, v)
-            await self.db.commit()
+            await self._commit()
             await self.db.refresh(obj)
         return obj
 
@@ -38,6 +46,6 @@ class BaseRepository(Generic[ModelT]):
         obj = await self.get(id)
         if obj:
             await self.db.delete(obj)
-            await self.db.commit()
+            await self._commit()
             return True
         return False
