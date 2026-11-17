@@ -3,14 +3,18 @@
 - 개발 DB와 분리된 테스트 전용 DB를 사용한다.
   기본값: DATABASE_URL의 DB 이름 뒤에 `_test`를 붙인 DB (예: fastapi → fastapi_test)
   변경: 환경변수 TEST_DATABASE_URL
-- 테스트 DB가 없으면 자동 생성하고, 세션 시작 시 테이블을 새로 만든다.
+- 테스트 DB가 없으면 자동 생성하고, 세션 시작 시 스키마를 비운 뒤
+  Alembic 마이그레이션(upgrade head)으로 테이블을 만든다. (마이그레이션도 함께 검증됨)
 - 각 테스트가 끝날 때마다 모든 테이블을 비운다.
 """
 import asyncio
 import os
+from pathlib import Path
 from typing import AsyncGenerator
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -29,10 +33,20 @@ TEST_DATABASE_URL = make_url(
     or _dev_url.set(database=f"{_dev_url.database}_test").render_as_string(hide_password=False)
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 # 개발 DB를 실수로 지우지 않도록 방어
 assert TEST_DATABASE_URL.database != _dev_url.database or "TEST_DATABASE_URL" in os.environ, (
     "테스트 DB가 개발 DB와 같습니다. TEST_DATABASE_URL을 확인하세요."
 )
+
+
+def alembic_config() -> Config:
+    """테스트 DB를 대상으로 하는 Alembic 설정."""
+    cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    cfg.attributes["database_url"] = TEST_DATABASE_URL.render_as_string(hide_password=False)
+    cfg.attributes["configure_logger"] = False
+    return cfg
 
 
 async def _prepare_test_database() -> None:
@@ -49,17 +63,19 @@ async def _prepare_test_database() -> None:
             await conn.execute(text(f'CREATE DATABASE "{TEST_DATABASE_URL.database}"'))
     await admin.dispose()
 
-    # 2) 현재 모델 기준으로 테이블을 새로 생성
+    # 2) 이전 실행의 테이블·alembic_version을 모두 제거
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
     await engine.dispose()
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _test_database() -> None:
     asyncio.run(_prepare_test_database())
+    # 3) 마이그레이션으로 테이블 생성
+    command.upgrade(alembic_config(), "head")
 
 
 @pytest.fixture

@@ -13,11 +13,16 @@ from models.base import Base
 import models.user  # noqa: F401 — autogenerate 테이블 탐지용
 
 config = context.config
+# 대상 DB: 코드에서 호출할 때 config.attributes["database_url"]로 지정 가능 (테스트 등),
+# 없으면 앱 설정(.env.local)의 DATABASE_URL 사용
+database_url = config.attributes.get("database_url") or settings.database_url
 # Alembic은 동기 드라이버 사용 (asyncpg → psycopg2로 치환)
-sync_url = settings.database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
-config.set_main_option("sqlalchemy.url", sync_url)
+sync_url = database_url.replace("postgresql+asyncpg", "postgresql+psycopg2")
+# ini 보간(%) 충돌 방지를 위해 %는 %%로 이스케이프
+config.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
 
-if config.config_file_name is not None:
+# 코드에서 호출할 때는 호출 측 로깅 설정을 덮어쓰지 않도록 configure_logger=False 지원
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
@@ -42,7 +47,11 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
